@@ -1,11 +1,11 @@
 /*
- * transport.c 
+ * transport.c
  *
  * COS461: Assignment 3 (STCP)
  *
  * This file implements the STCP layer that sits between the
  * mysocket and network layers. You are required to fill in the STCP
- * functionality in this file. 
+ * functionality in this file.
  *
  */
 
@@ -20,8 +20,17 @@
 #include "stcp_api.h"
 #include "transport.h"
 
+#define MAX_WINDOW_SIZE 3027 /* Max size of sender window */
+#define MAX_SEQ_SIZE 256
 
-enum { CSTATE_ESTABLISHED };    /* you should have more states */
+enum
+{
+  CSTATE_SEND_SYN,
+  CSTATE_WAIT_FOR_ACK,
+  CSTATE_ESTABLISHED,
+  CSTATE_CLOSED
+};
+/* you should have more states */
 
 
 /* this structure is global to a mysocket descriptor */
@@ -30,11 +39,12 @@ typedef struct
     bool_t done;    /* TRUE once connection is closed */
 
     int connection_state;   /* state of the connection (established, etc.) */
-    tcp_seq initial_sequence_num;
+    tcp_seq initial_sequence_num; // A random number between 1 - 255 to start the sequence
+    tcp_seq next_sequence_num;  // The "reciever" responds with the next sequence number it expects to recieve
+    tcp_seq ack_num;  // The "reciver" responds by acknowledging the last packet it recieves
 
     /* any other connection-wide global variables go here */
 } context_t;
-
 
 static void generate_initial_seq_num(context_t *ctx);
 static void control_loop(mysocket_t sd, context_t *ctx);
@@ -43,6 +53,9 @@ static void control_loop(mysocket_t sd, context_t *ctx);
 /* initialise the transport layer, and start the main loop, handling
  * any data from the peer or the application.  this function should not
  * return until the connection is closed.
+ *
+ * It is called by the transport thread function for a mysock (socket on STCP)
+ * located in mysock.c -> static void *transport_thread_func(void *arg_ptr)
  */
 void transport_init(mysocket_t sd, bool_t is_active)
 {
@@ -60,6 +73,17 @@ void transport_init(mysocket_t sd, bool_t is_active)
      * if connection fails; to do so, just set errno appropriately (e.g. to
      * ECONNREFUSED, etc.) before calling the function.
      */
+
+     // Calling code is "active"
+     if (is_active)
+     {
+       // Initiate SYN segment
+     }
+     else
+     {
+
+     }
+
     ctx->connection_state = CSTATE_ESTABLISHED;
     stcp_unblock_application(sd);
 
@@ -79,14 +103,14 @@ static void generate_initial_seq_num(context_t *ctx)
     /* please don't change this! */
     ctx->initial_sequence_num = 1;
 #else
-    /* you have to fill this up */
-    /*ctx->initial_sequence_num =;*/
+    /* Generate a random number given the max sequence number size */
+    ctx->initial_sequence_num = rand() % MAX_SEQ_SIZE;
 #endif
 }
 
 
 /* control_loop() is the main STCP loop; it repeatedly waits for one of the
- * following to happen:
+ * following events to happen:
  *   - incoming data from the peer
  *   - new data from the application (via mywrite())
  *   - the socket to be closed (via myclose())
@@ -121,7 +145,7 @@ static void control_loop(mysocket_t sd, context_t *ctx)
 /* our_dprintf
  *
  * Send a formatted message to stdout.
- * 
+ *
  * format               A printf-style format string.
  *
  * This function is equivalent to a printf, but may be
@@ -142,6 +166,3 @@ void our_dprintf(const char *format,...)
     fputs(buffer, stdout);
     fflush(stdout);
 }
-
-
-

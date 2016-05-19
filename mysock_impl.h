@@ -142,4 +142,3 @@ int _mysock_bind_ephemeral(mysock_context_t *ctx);
 pthread_t _mysock_create_thread(void *(*start)(void *args), void *args,                                         bool_t create_detached);
 
 #endif  /* __MYSOCK_INTERNAL_H__ */
-

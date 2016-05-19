@@ -266,4 +266,3 @@ void stcp_fin_received(mysocket_t sd)
     DEBUG_LOG(("stcp_fin_received(%d):  setting eof flag\n", sd));
     _mysock_enqueue_buffer(ctx, &ctx->app_send_queue, NULL, 0);
 }
-
