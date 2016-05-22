@@ -6,8 +6,8 @@
 DESCRIBE YOUR CODE AND DESIGN DECISIONS HERE
 
 This project implements a "Simple" Transport Control Protocol (STCP) that mimics
-actual TCP by providing the services listed below. Since this is a simplified,
-not all functionalities of pure TCP are supported (list below).
+actual TCP by providing the services listed below. Since this is a simplified version,
+not all functionalities of pure TCP are supported.
 
 -- Implemented --
 1. Sliding Window(s)
