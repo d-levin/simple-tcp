@@ -1,6 +1,34 @@
 ================================================
  README file for Project 3 - Simple TCP
-           Name(s): 
+ Name(s): Dennis Levin, Harish Bajaj, Matt Jordan
 ================================================
 
 DESCRIBE YOUR CODE AND DESIGN DECISIONS HERE
+
+This project implements a "Simple" Transport Control Protocol (STCP) that mimics
+actual TCP by providing the services listed below. Since this is a simplified version,
+not all functionalities of pure TCP are supported.
+
+-- Implemented --
+1. Sliding Window(s)
+  - Fixed size: 3072 bytes
+  - A receive window
+  - A sender window = min(receive window, congestion window)
+2. TCP segment send/receive
+3. Connection Setup/Teardown
+
+-- Not implemented --
+1. Congestion Control
+2. Since a reliable network layers is assumed, timeouts, packet loss, and
+reordering of packets are not supported.
+
+-- Files of Interest --
+transport.h :
+transport.c : Full implementation of STCP
+sctp_api.h : API utilized by STCP to communicate with the Network layer
+stcp_api.c : API utilized to communicate with the Application Layer
+mysock_impl.h : Data Structure per STCP connection state (mysock_context_t)
+
+
+-- Imposed Barriers --
+1. Project can not call any function in mysock.h/c

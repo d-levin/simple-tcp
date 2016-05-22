@@ -1,0 +1,5 @@
+#Don't Include
+*.o
+*.so
+*.exe
+*.dll
