@@ -259,16 +259,18 @@ void transport_init(mysocket_t sd, bool_t is_active) {
 }
 
 /* generate random initial sequence number for an STCP connection */
-static void generate_initial_seq_num(context_t *ctx)
-{
-    assert(ctx);
+static void generate_initial_seq_num(context_t* ctx) {
+  assert(ctx);
+  const unsigned int MAX = 255;
 
 #ifdef FIXED_INITNUM
-    /* please don't change this! */
-    ctx->initial_sequence_num = 1;
+  /* please don't change this! */
+  ctx->initial_sequence_num = 1;
 #else
-    /* Generate a random number given the max sequence number size */
-    ctx->initial_sequence_num = rand() % MAX_SEQ_SIZE;
+  /* you have to fill this up */
+  /*ctx->initial_sequence_num =;*/
+  srand(TIME(NULL));  // seed random number generator
+  ctx->initial_sequence_num = rand() % MAX + 1;
 #endif
 }
 
