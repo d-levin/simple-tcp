@@ -182,6 +182,7 @@ void transport_init(mysocket_t sd, bool_t is_active)
     else
     {
         ctx->connection_state = CSTATE_LISTEN;
+        printf("\nListening for incoming SYN");
         unsigned int event = stcp_wait_for_event(sd, NETWORK_DATA, NULL);
 
         // Verify correct event
@@ -200,6 +201,7 @@ void transport_init(mysocket_t sd, bool_t is_active)
           activeHeader = (STCPHeader*)buffer;
           // ctx->connection_state = SYN?
           ctx->connection_state = CSTATE_SYN_RECVD;
+          printf("\nReceived Initial SYN");
         }
 
         // Create SYN-ACK packet
@@ -211,6 +213,7 @@ void transport_init(mysocket_t sd, bool_t is_active)
         passiveHeader->th_win = 1;
 
         // Send SYN-ACK password
+        printf("\nSending SYN+ACK");
         ssize_t sentBytes = stcp_network_send(sd, passiveHeader, sizeof(STCPHeader), NULL);
 
         // Verify sending of SYN-ACK packet
@@ -227,11 +230,13 @@ void transport_init(mysocket_t sd, bool_t is_active)
           return;
         }
 
+        printf("\nWaiting for ACK");
         // Wait for ACK packet
         event = stcp_wait_for_event(sd, NETWORK_DATA, NULL);
 
         // if (event == NETWORK_DATA)
         // {
+          printf("\nPreparing to unblock the application");
           ssize_t receivedBytes = stcp_network_recv(sd, buffer, sizeof(buffer));
         // }
 
@@ -254,6 +259,7 @@ void transport_init(mysocket_t sd, bool_t is_active)
     }
 
     ctx->connection_state = CSTATE_ESTABLISHED;
+    printf("\nConnection Established");
     stcp_unblock_application(sd);
 
     control_loop(sd, ctx);
