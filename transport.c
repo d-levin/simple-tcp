@@ -305,14 +305,20 @@ void transport_init(mysocket_t sd, bool_t is_active)
           /* XXX: you will need to change some of these arguments! */
           event = stcp_wait_for_event(sd, 0, NULL);
 
-          /* check whether it was the network, app, or a close request */
+          /* the application has requested that data be sent */
           if (event & APP_DATA)
           {
-              /* the application has requested that data be sent */
+              printf("\nPreparing to recieve the data from the app", );
               /* see stcp_app_recv() */
           }
 
-          /* etc. */
+          // The network wants to send data
+          if (event & NETWORK_DATA)
+          {
+            printf("\nPreparing to recieve the network data");
+          }
+
+
       }
 }
 
