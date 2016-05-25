@@ -21,6 +21,7 @@
 #include "transport.h"
 #include <string.h>
 #include <time.h>
+#include "network_io.h"
 
 #define MAX_WINDOW_SIZE 3027 /* Max size of sender window */
 #define MAX_SEQ_SIZE 256
@@ -32,7 +33,7 @@ enum
   CSTATE_SEND_SYN,      // Client starts by sending SYN message, or a server will send this message.
   CSTATE_LISTEN,        // Server is waiting client SYN
   CSTATE_SENT_ACK,      // Both devices will ACK a SYN message
-  CSTATE_WAIT_FOR_ACK
+  CSTATE_WAIT_FOR_ACK,
   CSTATE_SYN_ACK,       // Client is waiting for matching SYN + ACK from server
   CSTATE_SYN_RECVD,     // Last step before established -- just need ACK
   CSTATE_ESTABLISHED,   // Steady state of a connection
@@ -64,246 +65,249 @@ static void control_loop(mysocket_t sd, context_t* ctx);
  * any data from the peer or the application.  this function should not
  * return until the connection is closed.
  */
-void transport_init(mysocket_t sd, bool_t is_active) {
-
-  //     unsigned int wait_flags;
-  //     STCPHeader *recvd_header;
-  //     STCPHeader *syn_header;
-  //     STCPHeader *syn_ack_header;
-  //     STCPHeader *ack_header;
-  //     char *segment;
-  //     char *data;
-
-// Maybe we want this global?
-  context_t* ctx;
-  STCPHeader* activeHeader = NULL;
-  STCPHeader* passiveHeader = NULL;
-
-  char buffer[MAX_IP_PAYLOAD_LEN];
-
-  ctx = (context_t*)calloc(1, sizeof(context_t));
-  assert(ctx);
-
-  generate_initial_seq_num(ctx);
-  //     ctx->sd = sd;
-
-  /* XXX: you should send a SYN packet here if is_active, or wait for one
- * to arrive if !is_active.  after the handshake completes, unblock the
- * application with stcp_unblock_application(sd).  you may also use
- * this to communicate an error condition back to the application, e.g.
- * if connection fails; to do so, just set errno appropriately (e.g. to
- * ECONNREFUSED, etc.) before calling the function.
- */
-  if (is_active) {  // Client control path, initiate connection
-    //        while(!ctx->CSTATE_ESTABLISHED)
-    //        {
-    //          // Step 2: Now waiting for the matching SYN from the server and also ack_num
-    //          // We either recieve both SYN + ACK from server simulataneously, or just SYN
-    //
-    //          // We got a SYN, just need the ACK
-    //          // ctx->connection_state = CSTATE_SYN_RECVD
-    //          // Got the ACK Now (Or if we got them together)
-    //          // ctx->connection_state = CSTATE_ESTABLISHED
-    //        }
-    // }
-
-    // Step 1: Client begins connection setup by initiating SYN
-    activeHeader = (STCPHeader*)malloc(sizeof(STCPHeader));
-    activeHeader->th_seq = htonl(ctx->initial_sequence_num);
-    activeHeader->th_acq = htonl(ctx->initial_sequence_num + 1);
-    activeHeader->th_off = 5;         // header size offset for packed data
-    activeHeader->th_flags = TH_SYN;  // set packet type to SYN
-    activeHeader->th_win = 1;         // default value
-
-    // Send SYN packet
-    ssize_t sentBytes =
-        stcp_network_send(sd, activeHeader, sizeof(STCPHeader), NULL);
-
-    // Verify sending of SYN packet
-    if (sentBytes) {  // If SYN packet suucessfully sent
-      ctx->connection_state = CSTATE_SYN_ACK;
-    } else {
-      free(activeHeader);
-      free(ctx);
-      stcp_unblock_application(sd);
-      errorno = ECONNREFUSED;  // TODO
-      return;
-    }
-
-    // Wait for SYN-ACK packet
-    unsigned int event = stcp_wait_for_event(sd, NETWORK_DATA, NULL);
-
-    // Verify correct event
-    if (event == NETWORK_DATA) {
-      ssize_t receivedBytes = stcp_network_recv(sd, buffer, MAX_IP_PAYLOAD_LEN);
-
-      // Verify size of received packet
-      if (receivedBytes < sizeof(STCPHeader)) {
-        free(activeHeader);
-        free(ctx);
-        stcp_unblock_application(sd);
-        errorno = ECONNREFUSED;  // TODO
-        return;
-      }
-
-      // Parse received data
-      passiveHeader = (STCPHeader*)buffer;
-
-      // Check for appropriate flags and set connection state
-      // TODO: Verify that we are not supposed to catch situation in which we only recieve one flag at a time
-      if (passiveHEADER->th_flags == (TH_ACK | TH_SYN)) {
-        ctx->initial_get_seq = ntohl(passiveHEADER->th_seq) + 1;
-        // This was SYN_ACK
-        ctx->connection_state = CSTATE_SEND_ACK;
-      }
-
-      // Create ACK packet
-      activeHeader->th_flags = TH_ACK;
-      activeHeader->th_seq = htonl(ctx->initial_get_seq);
-      activeHeader->th_ack = htonl(activeHeader->th_seq);
-
-      // Send ACK packet
-      sentBytes = stcp_network_send(sd, activeHeader, sizeof(STCPHeader), NULL);
-
-      free(activeHeader);
-    } else {
-      free(activeHeader);
-      free(ctx);
-      stcp_unblock_application(sd);
-      errorno = ECONNREFUSED;  // TODO
-      return;
-    }
-
-  } else {  // Server control path, wait for connection
-
-    // Step 1: Passive open on a TCP Port and set up context_t struct to manage the connection
-    //        // Step 2: Receieved SYN from client, now send SYN + ACK
-    //        ctx->connection_state = CSTATE_SEND_SYN;
-    //        ctx->connection_state = CSTATE_SEND_ACK;
-    //        // Step 3: Wait for ACK of SYN before connection setup completes
-    //        ctx->connection_state = CSTATE_SYN_RECVD;
-    //        // ACK recieved, move to establised state
-
-    // Wait for SYN packet
-    ctx->connection_state = CSTATE_LISTEN;
-    unsigned int event = stcp_wait_for_event(sd, NETWORK_DATA, NULL);
-
-    // Verify correct event
-    if (event == NETWORK_DATA) {
-      ssize_t receivedBytes = stcp_network_recv(sd, buffer, MAX_IP_PAYLOAD_LEN);
-
-      if (receivedBytes < sizeof(STCPHeader)) {
-        free(ctx);
-        stcp_unblock_application(sd);
-        errorno = ECONNREFUSED;  // TODO
-        return;
-      }
-
-      activeHeader = (activeHeader*)buffer;
-      // ctx->connection_state = SYN?
-      ctx->connection_state = CSTATE_SYN_RECVD;
-    }
-
-    // Create SYN-ACK packet
-    passiveHeader = (STCPHeader*)malloc(sizeof(STCPHeader));
-    passiveHeader->th_seq = htonl(ctx->initial_sequence_num);
-    passiveHeader->th_acq = htonl(ctx->initial_sequence_num + 1);
-    passiveHeader->th_off = 5;
-    passiveHeader->th_flags = TH_SYN | TH_ACK;
-    passiveHeader->th_win = 1;
-
-    // Send SYN-ACK password
-    ssize_t sentBytes = stcp_network_send(sd, passiveHeader, sizeof(STCPHeader), NULL);
-
-    // Verify sending of SYN-ACK packet
-    if (sentBytes) {
-      ctx->connection_state = CSTATE_WAIT_FOR_ACK;
-    } else {
-      free(passiveHeader);
-      free(ctx);
-      stcp_unblock_application(sd);
-      errorno = ECONNREFUSED; // TODO
-      return;
-    }
-
-    // Wait for ACK packet
-    unsigned int event stcp_wait_for_event(sd, NETWORK_DATA, NULL);
-
-    if (event == NETWORK_DATA) {
-      ssize_t receivedBytes = stcp_network_recv(sd, buffer, MAX_IP_PAYLOAD_LEN);
-    }
-
-    // Verify size of received packet
-    if (receivedBytes < sizeof(STCPHeader)) {
-      free(ctx);
-      stcp_unblock_application(sd);
-      errorno = ECONNREFUSED; // TODO
-      return;
-    }
-
-    // Parse received data
-    activeHeader = (activeHeader*)buffer;
-
-    if (activeHeader->th_flags == (TH_ACK)) {
-      ctx->initial_get_seq = ntohl(activeHeader->th_seq) + 1;
-    }
-  }
-
-  ctx->connection_state = CSTATE_ESTABLISHED;
-  stcp_unblock_application(sd);
-
-  control_loop(sd, ctx);
-
-  /* do any cleanup here */
-  free(ctx);
-}
-
-/* generate random initial sequence number for an STCP connection */
-static void generate_initial_seq_num(context_t* ctx) {
-  assert(ctx);
-  const unsigned int MAX = 255;
-
-#ifdef FIXED_INITNUM
-  /* please don't change this! */
-  ctx->initial_sequence_num = 1;
-#else
-  /* you have to fill this up */
-  /*ctx->initial_sequence_num =;*/
-  srand(TIME(NULL));  // seed random number generator
-  ctx->initial_sequence_num = rand() % MAX + 1;
-#endif
-}
-
-
-/* control_loop() is the main STCP loop; it repeatedly waits for one of the
- * following events to happen:
- *   - incoming data from the peer
- *   - new data from the application (via mywrite())
- *   - the socket to be closed (via myclose())
- *   - a timeout
- */
-static void control_loop(mysocket_t sd, context_t *ctx)
+void transport_init(mysocket_t sd, bool_t is_active)
 {
+    //     STCPHeader *recvd_header;
+    //     STCPHeader *syn_header;
+    //     STCPHeader *syn_ack_header;
+    //     STCPHeader *ack_header;
+    //     char *segment;
+    //     char *data;
+
+    // Maybe we want this global?
+    context_t* ctx;
+    STCPHeader* activeHeader = NULL;
+    STCPHeader* passiveHeader = NULL;
+
+    char buffer[MAX_IP_PAYLOAD_LEN];
+    // This will hold both data being sent from the application and data incoming from the link layer
+    //char* buffer = NULL;
+    //ssize_t buff_len;
+
+    ctx = (context_t*)calloc(1, sizeof(context_t));
     assert(ctx);
-    assert(!ctx->done);
 
-    while (!ctx->done)
-    {
-        unsigned int event;
+    generate_initial_seq_num(ctx);
+    ctx->sd = sd;
 
-        /* see stcp_api.h or stcp_api.c for details of this function */
-        /* XXX: you will need to change some of these arguments! */
-        event = stcp_wait_for_event(sd, 0, NULL);
+    /* XXX: you should send a SYN packet here if is_active, or wait for one
+   * to arrive if !is_active.  after the handshake completes, unblock the
+   * application with stcp_unblock_application(sd).  you may also use
+   * this to communicate an error condition back to the application, e.g.
+   * if connection fails; to do so, just set errno appropriately (e.g. to
+   * ECONNREFUSED, etc.) before calling the function.
+   */
+    if (is_active)
+    {  // Client control path, initiate connection
 
-        /* check whether it was the network, app, or a close request */
-        if (event & APP_DATA)
+        // Step 1: Client begins connection setup by initiating SYN
+        activeHeader = (STCPHeader*)malloc(sizeof(STCPHeader));
+        activeHeader->th_seq = htonl(ctx->initial_sequence_num);
+        activeHeader->th_ack = htonl(ctx->initial_sequence_num + 1);
+        activeHeader->th_off = 5;         // header size offset for packed data
+        activeHeader->th_flags = TH_SYN;  // set packet type to SYN
+        activeHeader->th_win = 1;         // default value
+
+        printf("\nPreparing to send SYN");
+        // Send SYN packet
+        ssize_t sentBytes =
+            stcp_network_send(sd, activeHeader, sizeof(STCPHeader), NULL);
+
+        // Verify sending of SYN packet
+        if (sentBytes)
+        {  // If SYN packet suucessfully sent
+          ctx->connection_state = CSTATE_SYN_ACK;
+        }
+        else
         {
-            /* the application has requested that data be sent */
-            /* see stcp_app_recv() */
+          free(activeHeader);
+          free(ctx);
+          stcp_unblock_application(sd);
+          errno = ECONNREFUSED;  // TODO
+          return;
         }
 
-        /* etc. */
+        // Wait for SYN-ACK packet
+        printf("\nWaiting for SYN-ACK");
+        unsigned int event = stcp_wait_for_event(sd, NETWORK_DATA, NULL);
+
+        // Verify correct event
+        if (event == NETWORK_DATA)
+        {
+          ssize_t receivedBytes = stcp_network_recv(sd, buffer, MAX_IP_PAYLOAD_LEN);
+
+          // Verify size of received packet
+          if (receivedBytes < (int)sizeof(STCPHeader))
+          {
+            free(activeHeader);
+            free(ctx);
+            stcp_unblock_application(sd);
+            errno = ECONNREFUSED;  // TODO
+            return;
+          }
+
+          // Parse received data
+          passiveHeader = (STCPHeader*)buffer;
+
+          // Check for appropriate flags and set connection state
+          // TODO: Verify that we are not supposed to catch situation in which we only recieve one flag at a time
+          if (passiveHeader->th_flags == (TH_ACK | TH_SYN))
+          {
+            // Assuming "get_initial_seq_num" was supposed to be this
+            ctx->initial_sequence_num = ntohl(passiveHeader->th_seq) + 1;
+            ctx->connection_state = CSTATE_SENT_ACK;
+          }
+
+          // Create ACK packet
+          activeHeader->th_flags = TH_ACK;
+          activeHeader->th_seq = htonl(ctx->initial_sequence_num);
+          activeHeader->th_ack = htonl(activeHeader->th_seq);
+
+          // Send ACK packet
+          printf("\nPreparing to send ACK");
+          sentBytes = stcp_network_send(sd, activeHeader, sizeof(STCPHeader), NULL);
+
+          free(activeHeader);
+        }
+        else
+        {
+          free(activeHeader);
+          free(ctx);
+          stcp_unblock_application(sd);
+          errno = ECONNREFUSED;  // TODO
+          return;
+        }
     }
+            // ** Server(Passive) control path -- wait for connection **
+    else
+    {
+        ctx->connection_state = CSTATE_LISTEN;
+        unsigned int event = stcp_wait_for_event(sd, NETWORK_DATA, NULL);
+
+        // Verify correct event
+        if (event == NETWORK_DATA)
+        {
+          ssize_t receivedBytes = stcp_network_recv(sd, buffer, MAX_IP_PAYLOAD_LEN);
+
+          if (receivedBytes < (int)sizeof(STCPHeader))
+          {
+            free(ctx);
+            stcp_unblock_application(sd);
+            errno = ECONNREFUSED;  // TODO
+            return;
+          }
+
+          activeHeader = (STCPHeader*)buffer;
+          // ctx->connection_state = SYN?
+          ctx->connection_state = CSTATE_SYN_RECVD;
+        }
+
+        // Create SYN-ACK packet
+        passiveHeader = (STCPHeader*)malloc(sizeof(STCPHeader));
+        passiveHeader->th_seq = htonl(ctx->initial_sequence_num);
+        passiveHeader->th_ack = htonl(ctx->initial_sequence_num + 1);
+        passiveHeader->th_off = 5;
+        passiveHeader->th_flags = TH_SYN | TH_ACK;
+        passiveHeader->th_win = 1;
+
+        // Send SYN-ACK password
+        ssize_t sentBytes = stcp_network_send(sd, passiveHeader, sizeof(STCPHeader), NULL);
+
+        // Verify sending of SYN-ACK packet
+        if (sentBytes)
+        {
+          ctx->connection_state = CSTATE_WAIT_FOR_ACK;
+        }
+        else
+        {
+          free(passiveHeader);
+          free(ctx);
+          stcp_unblock_application(sd);
+          errno = ECONNREFUSED; // TODO
+          return;
+        }
+
+        // Wait for ACK packet
+        event = stcp_wait_for_event(sd, NETWORK_DATA, NULL);
+
+        // if (event == NETWORK_DATA)
+        // {
+          ssize_t receivedBytes = stcp_network_recv(sd, buffer, sizeof(buffer));
+        // }
+
+        // Verify size of received packet
+        if (receivedBytes < (int)sizeof(STCPHeader))
+        {
+          free(ctx);
+          stcp_unblock_application(sd);
+          errno = ECONNREFUSED; // TODO
+          return;
+        }
+
+        // Parse received data
+        activeHeader = (STCPHeader*)buffer;
+
+        if (activeHeader->th_flags == (TH_ACK))
+        {
+          ctx->initial_sequence_num = ntohl(activeHeader->th_seq) + 1;
+        }
+    }
+
+    ctx->connection_state = CSTATE_ESTABLISHED;
+    stcp_unblock_application(sd);
+
+    control_loop(sd, ctx);
+
+    /* do any cleanup here */
+    free(ctx);
+  }
+
+  /* generate random initial sequence number for an STCP connection */
+  static void generate_initial_seq_num(context_t* ctx)
+  {
+      assert(ctx);
+      const unsigned int MAX = 255;
+
+      #ifdef FIXED_INITNUM
+        /* please don't change this! */
+        ctx->initial_sequence_num = 1;
+      #else
+        // Generate a random number 1 - 255
+        //srand(TIME(NULL));  // seed random number generator
+        ctx->initial_sequence_num = rand() % MAX + 1;
+      #endif
+  }
+
+
+  /* control_loop() is the main STCP loop; it repeatedly waits for one of the
+   * following events to happen:
+   *   - incoming data from the peer
+   *   - new data from the application (via mywrite())
+   *   - the socket to be closed (via myclose())
+   *   - a timeout
+   */
+  static void control_loop(mysocket_t sd, context_t *ctx)
+  {
+      assert(ctx);
+      assert(!ctx->done);
+
+      while (!ctx->done)
+      {
+          unsigned int event;
+
+          /* see stcp_api.h or stcp_api.c for details of this function */
+          /* XXX: you will need to change some of these arguments! */
+          event = stcp_wait_for_event(sd, 0, NULL);
+
+          /* check whether it was the network, app, or a close request */
+          if (event & APP_DATA)
+          {
+              /* the application has requested that data be sent */
+              /* see stcp_app_recv() */
+          }
+
+          /* etc. */
+      }
 }
 
 
