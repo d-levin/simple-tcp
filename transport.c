@@ -230,7 +230,7 @@ bool send_SYN(mysocket_t sd, context_t* ctx) {
   } else {
     free(SYN_packet);
     free(ctx);
-    stcp_unblock_application(sd);
+    //;
     errno = ECONNREFUSED;
     return false;
   }
@@ -246,7 +246,7 @@ void wait_for_SYN_ACK(mysocket_t sd, context_t* ctx) {
   // Verify size of received packet
   if (receivedBytes < sizeof(STCPHeader)) {
     free(ctx);
-    stcp_unblock_application(sd);
+    //;
     errno = ECONNREFUSED;  // TODO
     return;
   }
@@ -290,7 +290,7 @@ bool send_ACK(mysocket_t sd, context_t* ctx) {
   } else {
     free(ACK_packet);
     free(ctx);
-    stcp_unblock_application(sd);
+    //;
     errno = ECONNREFUSED;  // TODO
     return false;
   }
@@ -306,7 +306,7 @@ void wait_for_SYN(mysocket_t sd, context_t* ctx) {
   // Verify size of received packet
   if (receivedBytes < sizeof(STCPHeader)) {
     free(ctx);
-    stcp_unblock_application(sd);
+    //;
     errno = ECONNREFUSED;  // TODO
     return;
   }
@@ -350,7 +350,7 @@ bool send_SYN_ACK(mysocket_t sd, context_t* ctx) {
   } else {
     free(SYN_ACK_packet);
     free(ctx);
-    stcp_unblock_application(sd);
+    //;
     errno = ECONNREFUSED;  // TODO
     return false;
   }
@@ -366,7 +366,7 @@ void wait_for_ACK(mysocket_t sd, context_t* ctx) {
   // Verify size of received packet
   if (receivedBytes < sizeof(STCPHeader)) {
     free(ctx);
-    stcp_unblock_application(sd);
+    //;
     errno = ECONNREFUSED;  // TODO
     return;
   }
@@ -393,7 +393,7 @@ void app_data_event(mysocket_t sd, context_t* ctx) {
 
   if (app_bytes == 0) {
     free(ctx);
-    stcp_unblock_application(sd);
+    //;
     errno = ECONNREFUSED;  // TODO
     return;
   }
@@ -435,7 +435,7 @@ bool send_FIN_packet(mysocket_t sd, context_t* ctx) {
   } else {
     free(FIN_packet);
     free(ctx);
-    stcp_unblock_application(sd);
+    //;
     errno = ECONNREFUSED;  // TODO
     return false;
   }
@@ -449,7 +449,7 @@ void network_data_event(mysocket_t sd, context_t* ctx) {
   ssize_t network_bytes = stcp_network_recv(sd, payload, WINDOW_SIZE);
   if (network_bytes < sizeof(STCPHeader)) {
     free(ctx);
-    stcp_unblock_application(sd);
+    //;
     errno = ECONNREFUSED;  // TODO
     return;
   }
@@ -530,7 +530,7 @@ bool send_DATA_packet_network(mysocket_t sd, context_t* ctx, char* payload,
   } else {
     free(DATA_packet);
     free(ctx);
-    stcp_unblock_application(sd);
+    //;
     errno = ECONNREFUSED;  // TODO
     return false;
   }
