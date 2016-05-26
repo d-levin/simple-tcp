@@ -22,7 +22,6 @@
 #include "stcp_api.h"
 
 const unsigned int WINDOW_SIZE = 3072;
-const unsigned int MAX_IP_PAYLOAD_LEN = 1500;
 const unsigned int MSS = 536;
 
 struct timespec spec;
@@ -95,12 +94,12 @@ bool send_DATA_packet_network(mysocket_t sd, context_t* ctx, char* payload,
 void network_data_event(mysocket_t sd, context_t* ctx);
 void send_DATA_packet_app(mysocket_t sd, context_t* ctx, char* payload,
                           size_t length);
-void parse_DATA_packet(context_t* ctx, char* payload, bool& isFIN,
-                       bool& isDUP);
+void parse_DATA_packet(context_t* ctx, char* payload, bool& isFIN, bool& isDUP);
 STCPHeader* create_FIN_packet(unsigned int seq, unsigned int ack);
 bool send_FIN_packet(mysocket_t sd, context_t* ctx);
 void app_close_event(mysocket_t sd, context_t* ctx);
 void printSTCPHeader(STCPHeader* print);
+int min(int a, int b);
 
 /* initialise the transport layer, and start the main loop, handling
  * any data from the peer or the application.  this function should not
@@ -150,6 +149,8 @@ static void generate_initial_seq_num(context_t* ctx) {
   /* please don't change this! */
   ctx->seq_num = 1;
 #else
+  /* you have to fill this up */
+  /*ctx->seq_num =;*/
   srand(time(NULL));  // seed random number generator
   ctx->seq_num = rand() % MAX + 1;
 #endif
@@ -177,11 +178,13 @@ static void control_loop(mysocket_t sd, context_t* ctx) {
 
     if (event == APP_DATA) {
       clock_gettime(CLOCK_REALTIME, &spec);
+      // printf("%d APP DATA EVENT\n", spec.tv_nsec);
       app_data_event(sd, ctx);
     }
 
     if (event == NETWORK_DATA) {
       clock_gettime(CLOCK_REALTIME, &spec);
+      // printf("%d NETWORK DATA EVENT\n", spec.tv_nsec);
       network_data_event(sd, ctx);
     }
 
@@ -226,6 +229,7 @@ bool send_SYN(mysocket_t sd, context_t* ctx) {
   } else {
     free(SYN_packet);
     free(ctx);
+    // stcp_unblock_application(sd);
     errno = ECONNREFUSED;
     return false;
   }
@@ -236,11 +240,12 @@ void wait_for_SYN_ACK(mysocket_t sd, context_t* ctx) {
 
   unsigned int event = stcp_wait_for_event(sd, NETWORK_DATA, NULL);
 
-  ssize_t receivedBytes = stcp_network_recv(sd, buffer, MAX_IP_PAYLOAD_LEN);
+  ssize_t receivedBytes = stcp_network_recv(sd, buffer, MSS);
 
   // Verify size of received packet
   if (receivedBytes < sizeof(STCPHeader)) {
     free(ctx);
+    // stcp_unblock_application(sd);
     errno = ECONNREFUSED;  // TODO
     return;
   }
@@ -251,7 +256,8 @@ void wait_for_SYN_ACK(mysocket_t sd, context_t* ctx) {
   // Check for appropriate flags and set connection state
   if (receivedPacket->th_flags == (TH_ACK | TH_SYN)) {
     ctx->rec_seq_num = ntohl(receivedPacket->th_seq);
-    ctx->rec_wind_size = ntohs(receivedPacket->th_win);
+    ctx->rec_wind_size =
+        ntohs(receivedPacket->th_win) > 0 ? ntohs(receivedPacket->th_win) : 1;
     ctx->connection_state = SYN_ACK_RECEIVED;
   }
 }
@@ -283,6 +289,7 @@ bool send_ACK(mysocket_t sd, context_t* ctx) {
   } else {
     free(ACK_packet);
     free(ctx);
+    // stcp_unblock_application(sd);
     errno = ECONNREFUSED;  // TODO
     return false;
   }
@@ -293,11 +300,12 @@ void wait_for_SYN(mysocket_t sd, context_t* ctx) {
 
   unsigned int event = stcp_wait_for_event(sd, NETWORK_DATA, NULL);
 
-  ssize_t receivedBytes = stcp_network_recv(sd, buffer, MAX_IP_PAYLOAD_LEN);
+  ssize_t receivedBytes = stcp_network_recv(sd, buffer, MSS);
 
   // Verify size of received packet
   if (receivedBytes < sizeof(STCPHeader)) {
     free(ctx);
+    // stcp_unblock_application(sd);
     errno = ECONNREFUSED;  // TODO
     return;
   }
@@ -308,7 +316,8 @@ void wait_for_SYN(mysocket_t sd, context_t* ctx) {
   // Check for appropriate flags and set connection state
   if (receivedPacket->th_flags == TH_SYN) {
     ctx->rec_seq_num = ntohl(receivedPacket->th_seq);
-    ctx->rec_wind_size = ntohs(receivedPacket->th_win);
+    ctx->rec_wind_size =
+        ntohs(receivedPacket->th_win) > 0 ? ntohs(receivedPacket->th_win) : 1;
     ctx->connection_state = SYN_RECEIVED;
   }
 }
@@ -341,6 +350,7 @@ bool send_SYN_ACK(mysocket_t sd, context_t* ctx) {
   } else {
     free(SYN_ACK_packet);
     free(ctx);
+    stcp_unblock_application(sd);
     errno = ECONNREFUSED;  // TODO
     return false;
   }
@@ -351,11 +361,12 @@ void wait_for_ACK(mysocket_t sd, context_t* ctx) {
 
   unsigned int event = stcp_wait_for_event(sd, NETWORK_DATA, NULL);
 
-  ssize_t receivedBytes = stcp_network_recv(sd, buffer, MAX_IP_PAYLOAD_LEN);
+  ssize_t receivedBytes = stcp_network_recv(sd, buffer, MSS);
 
   // Verify size of received packet
   if (receivedBytes < sizeof(STCPHeader)) {
     free(ctx);
+    // stcp_unblock_application(sd);
     errno = ECONNREFUSED;  // TODO
     return;
   }
@@ -368,8 +379,8 @@ void wait_for_ACK(mysocket_t sd, context_t* ctx) {
   // Check for appropriate flags and set connection state
   if (receivedPacket->th_flags == TH_ACK) {
     ctx->rec_seq_num = ntohl(receivedPacket->th_seq);
-    ctx->rec_wind_size = ntohs(receivedPacket->th_win);
-
+    ctx->rec_wind_size =
+        ntohs(receivedPacket->th_win) > 0 ? ntohs(receivedPacket->th_win) : 1;
     if (ctx->connection_state == FIN_SENT) {
       ctx->connection_state = CSTATE_CLOSED;
     }
@@ -377,7 +388,7 @@ void wait_for_ACK(mysocket_t sd, context_t* ctx) {
 }
 
 void app_data_event(mysocket_t sd, context_t* ctx) {
-  size_t max_payload_length = MSS - sizeof(STCPHeader);
+  size_t max_payload_length = min(MSS, ctx->rec_wind_size) - sizeof(STCPHeader);
   char payload[max_payload_length];
   ssize_t app_bytes = stcp_app_recv(sd, payload, max_payload_length);
   // printf("App Data Bytes: %d\n", app_bytes);
@@ -385,6 +396,7 @@ void app_data_event(mysocket_t sd, context_t* ctx) {
 
   if (app_bytes == 0) {
     free(ctx);
+    // stcp_unblock_application(sd);
     errno = ECONNREFUSED;  // TODO
     return;
   }
@@ -429,6 +441,7 @@ bool send_FIN_packet(mysocket_t sd, context_t* ctx) {
   } else {
     free(FIN_packet);
     free(ctx);
+    // stcp_unblock_application(sd);
     errno = ECONNREFUSED;  // TODO
     return false;
   }
@@ -437,11 +450,12 @@ bool send_FIN_packet(mysocket_t sd, context_t* ctx) {
 void network_data_event(mysocket_t sd, context_t* ctx) {
   bool isFIN = false;
   bool isDUP = false;  // test if packet is a duplicate
-  char payload[WINDOW_SIZE];
+  char payload[MSS];
 
-  ssize_t network_bytes = stcp_network_recv(sd, payload, WINDOW_SIZE);
+  ssize_t network_bytes = stcp_network_recv(sd, payload, MSS);
   if (network_bytes < sizeof(STCPHeader)) {
     free(ctx);
+    // stcp_unblock_application(sd);
     errno = ECONNREFUSED;  // TODO
     return;
   }
@@ -521,25 +535,30 @@ bool send_DATA_packet_network(mysocket_t sd, context_t* ctx, char* payload,
   } else {
     free(DATA_packet);
     free(ctx);
+    // stcp_unblock_application(sd);
     errno = ECONNREFUSED;  // TODO
     return false;
   }
 }
 
 void printSTCPHeader(STCPHeader* print) {
-  printf("\n****HEADER****\n");
-  printf("th_sport: %d\n", ntohs(print->th_sport)); /* source port */
-  printf("th_dport: %d\n", ntohs(print->th_dport)); /* destination port */
-  printf("th_seq: %d\n", ntohl(print->th_seq));     /* sequence number */
-  printf("th_ack: %d\n", ntohl(print->th_ack));     /* acknowledgement number
-  */
-  printf("th_flags: %d\n", print->th_flags);
-  printf("th_win: %d\n", ntohs(print->th_win)); /* window */
-  printf("th_off: %d\n", ntohs(print->th_off));
-  printf("th_sum: %d\n", ntohs(print->th_sum)); /* checksum */
-  printf("th_urp: %d\n",
-         ntohs(print->th_urp)); /* urgent pointer (unused in STCP) */
-  printf("\n****HEADER****\n\n");
+  // printf("\n****HEADER****\n");
+  // printf("th_sport: %d\n", ntohs(print->th_sport)); /* source port */
+  // printf("th_dport: %d\n", ntohs(print->th_dport)); /* destination port */
+  // printf("th_seq: %d\n", ntohl(print->th_seq));     /* sequence number */
+  // printf("th_ack: %d\n", ntohl(print->th_ack));     /* acknowledgement number
+  // */
+  // printf("th_flags: %d\n", print->th_flags);
+  // printf("th_win: %d\n", ntohs(print->th_win)); /* window */
+  // printf("th_off: %d\n", ntohs(print->th_off));
+  // printf("th_sum: %d\n", ntohs(print->th_sum)); /* checksum */
+  // printf("th_urp: %d\n",
+  //        ntohs(print->th_urp)); /* urgent pointer (unused in STCP) */
+  // printf("\n****HEADER****\n\n");
+}
+
+int min(int a, int b) {
+  return (a < b ? a : b);
 }
 
 /**********************************************************************/

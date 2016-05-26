@@ -3,13 +3,19 @@
  Name(s): Dennis Levin, Harish Bajaj, Matt Jordan
 ================================================
 
-DESCRIBE YOUR CODE AND DESIGN DECISIONS HERE
+Files: transport.c, README
 
+Run server with ./server
+Server can be quite by signaling CTRL+C
+
+Run client with [-q] [-f <filename>] server:port
+
+OVERVIEW:
 This project implements a "Simple" Transport Control Protocol (STCP) that mimics
 actual TCP by providing the services listed below. Since this is a simplified version,
-not all functionalities of pure TCP are supported.
+so not all functionalities of pure TCP are supported.
 
--- Implemented --
+IMPLEMENTED:
 1. Sliding Window(s)
   - Fixed size: 3072 bytes
   - A receive window
@@ -17,23 +23,26 @@ not all functionalities of pure TCP are supported.
 2. TCP segment send/receive
 3. Connection Setup/Teardown
 
--- Not implemented --
+NOT IMPLEMENTED:
 1. Congestion Control
 2. Since a reliable network layers is assumed, timeouts, packet loss, and
 reordering of packets are not supported.
 
--- Files of Interest --
-transport.h :
-transport.c : Full implementation of STCP
-sctp_api.h : API utilized by STCP to communicate with the Network layer
-stcp_api.c : API utilized to communicate with the Application Layer
-mysock_impl.h : Data Structure per STCP connection state (mysock_context_t)
+IMPLEMENTATION DESIGN DECISION:
+1. Connection state enumerations were defined and used on an "as needed" basis.
+2. Based on need, our context_t manages these resources:
+  - connection state
+  - sequence number
+  - received sequence number
+  - receiver window size
+  - receiver buffer
+  - sender buffer
+3. Three-way handshaking mimics that of traditional TCP
+4. After a connection is established, on three events are handled:
+  - Application data
+  - Network data
+  - Application close request
 
-
--- Imposed Barriers --
+LIMITATIONS:
 1. Project can not call any function in mysock.h/c
-
--- Test Files --
-1. test.txt
-2. test.docx
-3. project.pdf
+2. Only plain text can be retrieved from the server. Other files types may result in unexpected results.
