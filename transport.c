@@ -35,7 +35,6 @@ enum {
   SYN_ACK_SENT,
   CSTATE_CLOSED,
   FIN_SENT,
-  FIN_RECEIVED
 }; /* you should have more states */
 
 typedef struct segment_t {
@@ -96,7 +95,8 @@ bool send_DATA_packet_network(mysocket_t sd, context_t* ctx, char* payload,
 void network_data_event(mysocket_t sd, context_t* ctx);
 void send_DATA_packet_app(mysocket_t sd, context_t* ctx, char* payload,
                           size_t length);
-void parse_DATA_packet(context_t* ctx, char* payload, bool& isACK, bool& isFIN);
+void parse_DATA_packet(context_t* ctx, char* payload, bool& isFIN,
+                       bool& isDUP);
 STCPHeader* create_FIN_packet(unsigned int seq, unsigned int ack);
 bool send_FIN_packet(mysocket_t sd, context_t* ctx);
 void app_close_event(mysocket_t sd, context_t* ctx);
@@ -150,8 +150,6 @@ static void generate_initial_seq_num(context_t* ctx) {
   /* please don't change this! */
   ctx->seq_num = 1;
 #else
-  /* you have to fill this up */
-  /*ctx->seq_num =;*/
   srand(time(NULL));  // seed random number generator
   ctx->seq_num = rand() % MAX + 1;
 #endif
@@ -172,20 +170,18 @@ static void control_loop(mysocket_t sd, context_t* ctx) {
   while (!ctx->done) {
     if (ctx->connection_state == CSTATE_CLOSED) {
       ctx->done = true;
-      break;
+      continue;
     }
 
     unsigned int event = stcp_wait_for_event(sd, ANY_EVENT, NULL);
 
     if (event == APP_DATA) {
       clock_gettime(CLOCK_REALTIME, &spec);
-      printf("%d APP DATA EVENT\n", spec.tv_nsec);
       app_data_event(sd, ctx);
     }
 
     if (event == NETWORK_DATA) {
       clock_gettime(CLOCK_REALTIME, &spec);
-      printf("%d NETWORK DATA EVENT\n", spec.tv_nsec);
       network_data_event(sd, ctx);
     }
 
@@ -197,7 +193,7 @@ static void control_loop(mysocket_t sd, context_t* ctx) {
 
     if (event == ANY_EVENT) {
       clock_gettime(CLOCK_REALTIME, &spec);
-      printf("%d ANY EVENT\n", spec.tv_nsec);
+      // printf("%d ANY EVENT\n", spec.tv_nsec);
     }
   }
 }
@@ -230,7 +226,6 @@ bool send_SYN(mysocket_t sd, context_t* ctx) {
   } else {
     free(SYN_packet);
     free(ctx);
-    //;
     errno = ECONNREFUSED;
     return false;
   }
@@ -246,7 +241,6 @@ void wait_for_SYN_ACK(mysocket_t sd, context_t* ctx) {
   // Verify size of received packet
   if (receivedBytes < sizeof(STCPHeader)) {
     free(ctx);
-    //;
     errno = ECONNREFUSED;  // TODO
     return;
   }
@@ -273,7 +267,7 @@ STCPHeader* create_ACK_packet(unsigned int seq, unsigned int ack) {
 }
 
 bool send_ACK(mysocket_t sd, context_t* ctx) {
-  printf("Sending ACK\n");
+  // printf("Sending ACK\n");
   // Create ACK Packet
   STCPHeader* ACK_packet =
       create_ACK_packet(ctx->seq_num, ctx->rec_seq_num + 1);
@@ -284,13 +278,11 @@ bool send_ACK(mysocket_t sd, context_t* ctx) {
 
   // Verify sending of ACK packet
   if (sentBytes > 0) {  // If ACK packet suucessfully sent
-    ctx->connection_state = SYN_SENT;
     free(ACK_packet);
     return true;
   } else {
     free(ACK_packet);
     free(ctx);
-    //;
     errno = ECONNREFUSED;  // TODO
     return false;
   }
@@ -306,7 +298,6 @@ void wait_for_SYN(mysocket_t sd, context_t* ctx) {
   // Verify size of received packet
   if (receivedBytes < sizeof(STCPHeader)) {
     free(ctx);
-    //;
     errno = ECONNREFUSED;  // TODO
     return;
   }
@@ -344,13 +335,12 @@ bool send_SYN_ACK(mysocket_t sd, context_t* ctx) {
 
   // Verify sending of SYN_ACK packet
   if (sentBytes > 0) {  // If SYN_ACK packet suucessfully sent
-    ctx->connection_state = SYN_SENT;
+    ctx->connection_state = SYN_ACK_SENT;
     free(SYN_ACK_packet);
     return true;
   } else {
     free(SYN_ACK_packet);
     free(ctx);
-    //;
     errno = ECONNREFUSED;  // TODO
     return false;
   }
@@ -366,7 +356,6 @@ void wait_for_ACK(mysocket_t sd, context_t* ctx) {
   // Verify size of received packet
   if (receivedBytes < sizeof(STCPHeader)) {
     free(ctx);
-    //;
     errno = ECONNREFUSED;  // TODO
     return;
   }
@@ -374,13 +363,16 @@ void wait_for_ACK(mysocket_t sd, context_t* ctx) {
   // Parse received data
   STCPHeader* receivedPacket = (STCPHeader*)buffer;
 
-  printf("Received ACK\n");
   printSTCPHeader(receivedPacket);
 
   // Check for appropriate flags and set connection state
   if (receivedPacket->th_flags == TH_ACK) {
     ctx->rec_seq_num = ntohl(receivedPacket->th_seq);
     ctx->rec_wind_size = ntohs(receivedPacket->th_win);
+
+    if (ctx->connection_state == FIN_SENT) {
+      ctx->connection_state = CSTATE_CLOSED;
+    }
   }
 }
 
@@ -388,12 +380,11 @@ void app_data_event(mysocket_t sd, context_t* ctx) {
   size_t max_payload_length = MSS - sizeof(STCPHeader);
   char payload[max_payload_length];
   ssize_t app_bytes = stcp_app_recv(sd, payload, max_payload_length);
-  printf("App Data Bytes: %d\n", app_bytes);
-  printf("App Data Payload: %s\n", payload);
+  // printf("App Data Bytes: %d\n", app_bytes);
+  // printf("App Data Payload: %s\n", payload);
 
   if (app_bytes == 0) {
     free(ctx);
-    //;
     errno = ECONNREFUSED;  // TODO
     return;
   }
@@ -404,9 +395,9 @@ void app_data_event(mysocket_t sd, context_t* ctx) {
 
 void app_close_event(mysocket_t sd, context_t* ctx) {
   if (ctx->connection_state == CSTATE_ESTABLISHED) {
-    if (!send_FIN_packet(sd, ctx)) return;
-    ctx->connection_state = FIN_SENT;
+    send_FIN_packet(sd, ctx);
   }
+  printf("connection_state: %d\n", ctx->connection_state);
 }
 
 STCPHeader* create_FIN_packet(unsigned int seq, unsigned int ack) {
@@ -430,51 +421,52 @@ bool send_FIN_packet(mysocket_t sd, context_t* ctx) {
 
   // Verify sending of FIN packet
   if (sentBytes > 0) {  // If FIN packet suucessfully sent
+    ctx->connection_state = FIN_SENT;
+    wait_for_ACK(sd, ctx);
+
     free(FIN_packet);
     return true;
   } else {
     free(FIN_packet);
     free(ctx);
-    //;
     errno = ECONNREFUSED;  // TODO
     return false;
   }
 }
 
 void network_data_event(mysocket_t sd, context_t* ctx) {
-  bool isACK = false;
   bool isFIN = false;
+  bool isDUP = false;  // test if packet is a duplicate
   char payload[WINDOW_SIZE];
 
   ssize_t network_bytes = stcp_network_recv(sd, payload, WINDOW_SIZE);
   if (network_bytes < sizeof(STCPHeader)) {
     free(ctx);
-    //;
     errno = ECONNREFUSED;  // TODO
     return;
   }
 
   printSTCPHeader((STCPHeader*)payload);
-  printf("Network Data Payload: %s\n", payload + sizeof(STCPHeader));
-  printf("Network Bytes: %d\n", network_bytes);
+  // printf("Network Data Payload: %s\n", payload + sizeof(STCPHeader));
+  // printf("Network Bytes: %d\n", network_bytes);
 
-  parse_DATA_packet(ctx, payload, isACK, isFIN);
-  if (isACK) {
-    clock_gettime(CLOCK_REALTIME, &spec);
-    printf("%d isACK\n", spec.tv_nsec);
-    if (ctx->connection_state == FIN_RECEIVED) {
-      ctx->connection_state = CSTATE_CLOSED;
-    }
+  parse_DATA_packet(ctx, payload, isFIN, isDUP);
+  if (isDUP) {
+    send_ACK(sd, ctx);
+    return;
   }
+
   if (isFIN) {
     clock_gettime(CLOCK_REALTIME, &spec);
-    printf("%d isFIN\n", spec.tv_nsec);
-    ctx->connection_state = FIN_RECEIVED;
-    stcp_fin_received(sd);
+    // printf("%d isFIN\n", spec.tv_nsec);
     send_ACK(sd, ctx);
+    stcp_fin_received(sd);
+    ctx->connection_state = CSTATE_CLOSED;
+    return;
   }
+
   if (network_bytes - sizeof(STCPHeader)) {
-    printf("isDATA\n");
+    // printf("isDATA\n");
     send_DATA_packet_app(sd, ctx, payload, network_bytes);
     send_ACK(sd, ctx);
   }
@@ -486,20 +478,19 @@ void send_DATA_packet_app(mysocket_t sd, context_t* ctx, char* payload,
   stcp_app_send(sd, payload + sizeof(STCPHeader), length - sizeof(STCPHeader));
 }
 
-void parse_DATA_packet(context_t* ctx, char* payload, bool& isACK,
-                       bool& isFIN) {
+void parse_DATA_packet(context_t* ctx, char* payload, bool& isFIN,
+                       bool& isDUP) {
   STCPHeader* payloadHeader = (STCPHeader*)payload;
   ctx->rec_seq_num = ntohl(payloadHeader->th_seq);
   ctx->rec_wind_size = ntohs(payloadHeader->th_win);
-  isACK = payloadHeader->th_ack == TH_ACK;
   isFIN = payloadHeader->th_flags == TH_FIN;
 }
 
 STCPHeader* create_DATA_packet(unsigned int seq, unsigned int ack,
                                char* payload, size_t payload_length) {
-  printf("Create DATA Packet Payload: %s\n", payload);
+  // printf("Create DATA Packet Payload: %s\n", payload);
   unsigned int DATA_packet_size = sizeof(STCPHeader) + payload_length;
-  printf("DATA Packet Payload Size: %d\n", DATA_packet_size);
+  // printf("DATA Packet Payload Size: %d\n", DATA_packet_size);
   STCPHeader* DATA_packet = (STCPHeader*)malloc(DATA_packet_size);
 
   DATA_packet->th_seq = htonl(seq);
@@ -522,7 +513,7 @@ bool send_DATA_packet_network(mysocket_t sd, context_t* ctx, char* payload,
   // Send DATA packet
   ssize_t sentBytes = stcp_network_send(
       sd, DATA_packet, sizeof(STCPHeader) + payload_length, NULL);
-  printf("Network Sent Bytes: %d\n", sentBytes);
+  // printf("Network Sent Bytes: %d\n", sentBytes);
 
   if (sentBytes > 0) {  // If SYN_ACK packet suucessfully sent
     free(DATA_packet);
@@ -530,7 +521,6 @@ bool send_DATA_packet_network(mysocket_t sd, context_t* ctx, char* payload,
   } else {
     free(DATA_packet);
     free(ctx);
-    //;
     errno = ECONNREFUSED;  // TODO
     return false;
   }
@@ -541,7 +531,8 @@ void printSTCPHeader(STCPHeader* print) {
   printf("th_sport: %d\n", ntohs(print->th_sport)); /* source port */
   printf("th_dport: %d\n", ntohs(print->th_dport)); /* destination port */
   printf("th_seq: %d\n", ntohl(print->th_seq));     /* sequence number */
-  printf("th_ack: %d\n", ntohl(print->th_ack));     /* acknowledgement number */
+  printf("th_ack: %d\n", ntohl(print->th_ack));     /* acknowledgement number
+  */
   printf("th_flags: %d\n", print->th_flags);
   printf("th_win: %d\n", ntohs(print->th_win)); /* window */
   printf("th_off: %d\n", ntohs(print->th_off));
